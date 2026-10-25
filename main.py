@@ -52,6 +52,23 @@ LEVELS = [
     },
 ]
 
+font = pygame.font.Font(None, 48)
+MON_SCREEN = pygame.Rect(300, 120, 400, 180)
+MON_FRAME = pygame.Rect(270, 90, 460, 250)
+
+def draw_outside(surface):
+    surface.fill((110, 75, 45))
+    pygame.draw.rect(surface, (25, 25, 30), MON_FRAME, border_radius=8)
+    pygame.draw.rect(surface, (10, 10, 14), MON_SCREEN)
+    pygame.draw.rect(surface, (35, 35, 40), (480, 330, 40, 40))
+    pygame.draw.rect(surface, (35, 35, 40), (420, 370, 160, 14))
+    pygame.draw.rect(surface, (60, 60, 68), (330, 395, 340, 40), border_radius = 4)
+    for row in range(3):
+        for col in range(15):
+            pygame.draw.rect(surface, (90, 90, 100), (338 + col * 21, 401 + row * 11, 17, 7))
+    pygame.draw.rect(surface, (230, 230, 235), (790, 385, 36, 44 ))
+    pygame.draw.rect(surface, (230, 230, 235), (822, 395, 14, 22), 4)
+
 def draw_level(surface, platforms, key, door, has_key, bg):
     surface.fill((bg))
     for p in platforms:
@@ -77,6 +94,10 @@ async def main():
     old_room = None
     speck_img = None
 
+    final_room = None
+    ending = False
+    end_t = 0.0
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -84,7 +105,7 @@ async def main():
                 running = False
 
         prev_x = player.x
-        if not zooming:
+        if not (zooming or ending):
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT]:
                 player.x -= 7 #You can guess my fav player from here
@@ -129,18 +150,36 @@ async def main():
                 zooming = True
                 zoom_t = 0.0
             else:
-                print("all levels complete")
-
+                final_room = pygame.Surface((WIDTH, HEIGHT))
+                draw_level(final_room, level["platforms"], level["key"], level["door"], True, level["bg"])
+                if "speck" in level and speck_img is not None:
+                    final_room.blit(speck_img, level["speck"].topleft)
+                ending = True
+                end_t = 0.0
 
         if zooming:
             zoom_t = min(1.0, zoom_t + 1 / 135)
+
+        if ending:
+            end_t = min(1.0, end_t + 1 / 180)
 
         draw_level(world, level["platforms"], level["key"], level["door"], has_key, level["bg"])
         if "speck" in level and speck_img is not None:
             world.blit(speck_img, level["speck"].topleft)
         pygame.draw.rect(world,(255, 200, 80), player)
 
-        if zooming:
+
+        if ending:
+            draw_outside(screen)
+            x = int(MON_SCREEN.x * end_t)
+            y = int(MON_SCREEN.y * end_t)
+            w = max(1, int(WIDTH + (MON_SCREEN.w - WIDTH) * end_t))
+            h = max(1, int(HEIGHT + (MON_SCREEN.h - HEIGHT) * end_t))
+            screen.blit(pygame.transform.smoothscale(final_room, (w, h)), (x, y))
+            if end_t >= 1.0:
+                text = font.render("You were never the main character.", True, (245, 235, 215))
+                screen.blit(text, text.get_rect(center=(WIDTH // 2, 45)))
+        elif zooming:
             nxt = LEVELS[level_idx + 1]
             draw_level(screen, nxt["platforms"], nxt["key"], nxt["door"], False, nxt["bg"])
             sp = nxt["speck"]
