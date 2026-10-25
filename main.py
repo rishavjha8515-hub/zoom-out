@@ -153,6 +153,8 @@ async def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            if ending and end_t >= 1.0 and event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                return "restart"
 
         walls = solids(level, speck_img is not None)
         prev_x = player.x
@@ -311,7 +313,12 @@ async def main():
         clock.tick(60)
         await asyncio.sleep(0)    
 
+    return "quit"
+
+async def run():
+    while await main() == "restart":
+        pass
     pygame.quit()
 
-asyncio.run(main())
+asyncio.run(run())
 
