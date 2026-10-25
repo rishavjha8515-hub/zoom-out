@@ -1,5 +1,6 @@
 import pygame
 import asyncio
+import math
 
 pygame.init()
 
@@ -33,7 +34,8 @@ LEVELS = [
         "key": pygame.Rect(80, 121, 10, 10),
         "door": pygame.Rect(900, HEIGHT - 80, 24, 40),
         "start": (150, HEIGHT - 40 - 27),
-        "speck": pygame.Rect(40, HEIGHT - 40 - 45, 100, 45)
+        "speck": pygame.Rect(40, HEIGHT - 40 - 45, 100, 45),
+        "cursor": (700, 60),
     },
     {
         "bg": (15, 40, 80),
@@ -49,10 +51,19 @@ LEVELS = [
         "door": pygame.Rect(40, HEIGHT - 80, 24, 40),
         "start": (835, HEIGHT - 40 - 27),
         "speck": pygame.Rect(WIDTH - 140, HEIGHT - 40 - 45, 100, 45),
+        "cursor": (120, 60),
     },
 ]
 
 font = pygame.font.Font(None, 48)
+small_font = pygame.font.Font(None, 28)
+
+CURSOR_SPEED = 1.4
+CLICK_RANGE = 120
+CLICK_FRAMES = 40
+RING_END_R = 45
+ARROW = [(0,0), (0,40), (10,31), (18,48), (25,45), (17,28), (30, 28)]
+
 MON_SCREEN = pygame.Rect(300, 120, 400, 180)
 MON_FRAME = pygame.Rect(270, 90, 460, 250)
 
@@ -68,6 +79,17 @@ def draw_outside(surface):
             pygame.draw.rect(surface, (90, 90, 100), (338 + col * 21, 401 + row * 11, 17, 7))
     pygame.draw.rect(surface, (230, 230, 235), (790, 385, 36, 44 ))
     pygame.draw.rect(surface, (230, 230, 235), (822, 395, 14, 22), 4)
+
+def solids(level, speck_on):
+    s = list(level["platforms"])
+    if speck_on and "speck" in level:
+        s.append(level["speck"])
+    return s
+
+def draw_cursor(surface, x, y, scale=2.5):
+    pts = [(x + px * scale,y + py * scale) for px, py in ARROW]
+    pygame.draw.polygon(surface, (255, 255, 255), pts)
+    pygame.draw.polygon(surface, (0, 0, 0), pts, 3)
 
 def draw_level(surface, platforms, key, door, has_key, bg):
     surface.fill((bg))
@@ -98,12 +120,32 @@ async def main():
     ending = False
     end_t = 0.0
 
+    deaths = 0
+    cur = {"x": 0.0, "y": 0.0, "state": "chase", "timer": 0,
+           "cool": 0, "lock": (0, 0)}
+
+    def place_cursor():
+        if "cursor" in level:
+            cur["x"], cur["y"] = level["cursor"]
+            cur["state"] = 0
+            cur["timer"] = 0
+            cur["cool"] = 90
+
+    def reset_level():
+        nonlocal has_key, vel_y, deaths
+        player.topleft = level["start"]
+        has_key = False
+        vel_y = 0
+        deaths += 1
+        place_cursor()
+
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
+        walls = solids(level, speck_img is not None)
         prev_x = player.x
         if not (zooming or ending):
             keys = pygame.key.get_pressed()
@@ -115,7 +157,7 @@ async def main():
                 vel_y = -12.25
         dx = player.x - prev_x
 
-        for p in level["platforms"]:
+        for p in walls:
             if player.colliderect(p):
                 if dx > 0:
                     player.right = p.left
@@ -127,7 +169,7 @@ async def main():
         player.clamp_ip(screen.get_rect())
 
         on_ground = False
-        for p in level["platforms"]:
+        for p in walls:
             if player.colliderect(p):
                 if vel_y > 0:
                     player.bottom = p.top
@@ -136,6 +178,31 @@ async def main():
                 elif vel_y < 0:
                     player.top = p.bottom
                     vel_y = 0
+
+        if "cursor" in level and not (zooming or ending or level_done):
+            if cur["state"] == "chase":
+                tx = player.centerx - cur["x"]
+                ty = player.centery - cur["y"]
+                dist = math.hypot(tx, ty)
+                if cur["cool"] > 0:
+                    cur["cool"] -= 1
+                if dist < CLICK_RANGE and cur["cool"] == 0:
+                    cur["state"] = "click"
+                    cur["timer"] = CLICK_FRAMES
+                    cur["lock"] = player.center
+                elif dist > 1:
+                    cur["x"] += tx / dist * CURSOR_SPEED
+                    cur["y"] += ty / dist * CURSOR_SPEED
+            else:
+                cur["timer"] -= 1
+                if cur["timer"] <= 0:
+                    lx, ly = cur["lock"]
+                    hit = math.hypot(player.centerx - lx, player.centery - ly) <= RING_END_R
+                    if hit:
+                        reset_level()
+                    else:
+                        cur["state"] = "chase"
+                        cur["cool"] = 60
 
         if player.colliderect(level["key"]):
             has_key = True
@@ -168,6 +235,15 @@ async def main():
             world.blit(speck_img, level["speck"].topleft)
         pygame.draw.rect(world,(255, 200, 80), player)
 
+        if "cursor" in level:
+            if cur["state"] == "click":
+                frac = cur["timer"] / CLICK_FRAMES
+                r = int(RING_END_R + (CLICK_RANGE - RING_END_R) * frac)
+                pygame.draw.circle(world, (255, 80, 80), cur["lock"], max(r, 2), 3)
+            draw_cursor(world, cur["x"], cur["y"])
+
+        label = small_font.render(f"Clicked: {deaths}", True, (230, 230, 235))
+        world.blit(label, (12, 10))
 
         if ending:
             draw_outside(screen)
@@ -179,6 +255,9 @@ async def main():
             if end_t >= 1.0:
                 text = font.render("You were never the main character.", True, (245, 235, 215))
                 screen.blit(text, text.get_rect(center=(WIDTH // 2, 45)))
+                times = "time" if deaths == 1 else "times"
+                sub = small_font.render(f"You were clicked{deaths} {times}.", True, (245, 235, 215))
+                screen.blit(sub, sub.get_rect(center=(WIDTH // 2, 77)))
         elif zooming:
             nxt = LEVELS[level_idx + 1]
             draw_level(screen, nxt["platforms"], nxt["key"], nxt["door"], False, nxt["bg"])
@@ -199,6 +278,7 @@ async def main():
                 player.topleft = level["start"]
                 speck_img = pygame.transform.smoothscale(old_room, level["speck"].size)
                 zooming = False
+                place_cursor()
         else:
             screen.blit(world, (0,0))
 
