@@ -34,7 +34,22 @@ LEVELS = [
         "door": pygame.Rect(900, HEIGHT - 80, 24, 40),
         "start": (150, HEIGHT - 40 - 27),
         "speck": pygame.Rect(40, HEIGHT - 40 - 45, 100, 45)
-    }
+    },
+    {
+        "bg": (15, 40, 80),
+        "platforms": [
+            pygame.Rect(0, HEIGHT - 40, WIDTH, 40),
+            pygame.Rect(720, 345, 100, 14),
+            pygame.Rect(570, 280, 100, 14),
+            pygame.Rect(420, 215, 100, 14),
+            pygame.Rect(570, 150, 100, 14),
+            pygame.Rect(720, 90, 100, 14),
+        ],
+        "key": pygame.Rect(765, 74, 10, 10),
+        "door": pygame.Rect(40, HEIGHT - 80, 24, 40),
+        "start": (835, HEIGHT - 40 - 27),
+        "speck": pygame.Rect(WIDTH - 140, HEIGHT - 40 - 45, 100, 45),
+    },
 ]
 
 def draw_level(surface, platforms, key, door, has_key, bg):
@@ -68,6 +83,7 @@ async def main():
             if event.type == pygame.QUIT:
                 running = False
 
+        prev_x = player.x
         if not zooming:
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT]:
@@ -76,18 +92,29 @@ async def main():
                 player.x += 7
             if keys[pygame.K_SPACE] and on_ground:
                 vel_y = -12.25
+        dx = player.x - prev_x
+
+        for p in level["platforms"]:
+            if player.colliderect(p):
+                if dx > 0:
+                    player.right = p.left
+                elif dx < 0:
+                    player.left = p.right
 
         vel_y += 0.676 ##It is not random but square of my birthday :)
-        prev_bottom = player.bottom
         player.y += round(vel_y)
         player.clamp_ip(screen.get_rect())
 
         on_ground = False
         for p in level["platforms"]:
-            if player.colliderect(p) and vel_y > 0 and prev_bottom <= p.top:
-                player.bottom = p.top
-                vel_y = 0
-                on_ground = True
+            if player.colliderect(p):
+                if vel_y > 0:
+                    player.bottom = p.top
+                    vel_y = 0
+                    on_ground = True
+                elif vel_y < 0:
+                    player.top = p.bottom
+                    vel_y = 0
 
         if player.colliderect(level["key"]):
             has_key = True
@@ -97,6 +124,8 @@ async def main():
                 old_room = pygame.Surface((WIDTH, HEIGHT))
                 draw_level(old_room, level["platforms"], level["key"],
                            level["door"], True, level["bg"]) 
+                if "speck" in level and speck_img is not None:
+                    old_room.blit(speck_img, level["speck"].topleft)
                 zooming = True
                 zoom_t = 0.0
             else:
