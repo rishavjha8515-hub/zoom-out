@@ -10,6 +10,10 @@ pygame.display.set_caption("Little Guy, Big Picture")
 clock = pygame.time.Clock()
 world = pygame.Surface((WIDTH, HEIGHT))
 
+M1 = pygame.Rect(570, 280, 100, 14)
+M2 = pygame.Rect(420, 215, 100, 14)
+M3 = pygame.Rect(570, 150, 100, 14)
+
 LEVELS = [
     {
         "bg": (20, 20, 30),
@@ -42,10 +46,15 @@ LEVELS = [
         "platforms": [
             pygame.Rect(0, HEIGHT - 40, WIDTH, 40),
             pygame.Rect(720, 345, 100, 14),
-            pygame.Rect(570, 280, 100, 14),
-            pygame.Rect(420, 215, 100, 14),
-            pygame.Rect(570, 150, 100, 14),
+            M1,
+            M2,
+            M3,
             pygame.Rect(720, 90, 100, 14),
+        ],
+        "movers": [
+            {"rect": M1, "min": 480, "max": 740, "speed": 2},
+            {"rect": M2, "min": 380, "max": 580, "speed": 2},
+            {"rect": M3, "min": 520, "max": 720, "speed": 3},
         ],
         "key": pygame.Rect(765, 74, 10, 10),
         "door": pygame.Rect(40, HEIGHT - 80, 24, 40),
@@ -127,7 +136,7 @@ async def main():
     def place_cursor():
         if "cursor" in level:
             cur["x"], cur["y"] = level["cursor"]
-            cur["state"] = 0
+            cur["state"] = "chase"
             cur["timer"] = 0
             cur["cool"] = 90
 
@@ -147,6 +156,22 @@ async def main():
 
         walls = solids(level, speck_img is not None)
         prev_x = player.x
+        for mv in level.get("movers", []):
+            r = mv["rect"]
+            on_top = (player.bottom == r.top and player.right > r.left and player.left < r.right)
+            old_x = r.x
+            r.x += mv["speed"]
+            if r.left < mv["min"] or r.right > mv["max"]:
+                mv["speed"] *= -1
+                r.x = old_x + mv["speed"]
+            moved = r.x - old_x
+            if on_top:
+                player.x += moved
+            elif player.colliderect(r):
+                if moved > 0:
+                    player.left = r.right
+                else:
+                    player.right = r.left
         if not (zooming or ending):
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT]:
@@ -256,7 +281,7 @@ async def main():
                 text = font.render("You were never the main character.", True, (245, 235, 215))
                 screen.blit(text, text.get_rect(center=(WIDTH // 2, 45)))
                 times = "time" if deaths == 1 else "times"
-                sub = small_font.render(f"You were clicked{deaths} {times}.", True, (245, 235, 215))
+                sub = small_font.render(f"You were clicked {deaths} {times}.", True, (245, 235, 215))
                 screen.blit(sub, sub.get_rect(center=(WIDTH // 2, 77)))
         elif zooming:
             nxt = LEVELS[level_idx + 1]
